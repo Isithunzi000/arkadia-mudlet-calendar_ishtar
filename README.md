@@ -64,4 +64,5 @@ Jeśli nadal się nie instaluje, sprawdź konsolę główną pod kątem linii `[
 - przelicznik czasu: 2 sekundy RL = 1 minuta IG (1 godzina gry = 120 s RL)
 - kalendarz Ishtar: 360 dni (8 pór roku po 45 dni)
 - źródłem czasu jest wyłącznie komenda `czas` — pakiet nie zależy od GMCP
-- wersja `1.8.11m` bazuje na ishtar_cal 1.8.11 (Dargoth)
+- wersja `1.8.12m` bazuje na ishtar_cal 1.8.11 (Dargoth)
+- od `1.8.12m` wewnętrzna numeracja roku liczy od **1 Saovine** (konwencja gry, potwierdzona empirycznie) — czysto wewnętrzna zmiana, wyniki (odliczania, daty RL) pozostają identyczne; spójne z pakietem [paska kalendarza](https://github.com/Isithunzi000/arkadia-mudlet-pasek_czas)
