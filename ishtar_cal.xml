@@ -1,0 +1,832 @@
+<MudletPackage version="1.001">
+	<TriggerPackage>
+		<TriggerGroup isActive="yes" isFolder="yes" isTempTrigger="no" isMultiline="no" isPerlSlashGOption="no" isColorizerTrigger="no" isFilterTrigger="no" isSoundTrigger="no" isColorTrigger="no" isColorTriggerFg="no" isColorTriggerBg="no">
+			<name>ishtar_cal</name>
+			<script />
+			<triggerType>0</triggerType>
+			<conditonLineDelta>0</conditonLineDelta>
+			<mStayOpen>0</mStayOpen>
+			<mCommand />
+			<packageName />
+			<mFgColor>#ff0000</mFgColor>
+			<mBgColor>#ffff00</mBgColor>
+			<mSoundFile />
+			<colorTriggerFgColor>#000000</colorTriggerFgColor>
+			<colorTriggerBgColor>#000000</colorTriggerBgColor>
+			<regexCodeList />
+			<regexCodePropertyList />
+			<Trigger isActive="yes" isFolder="no" isTempTrigger="no" isMultiline="no" isPerlSlashGOption="no" isColorizerTrigger="no" isFilterTrigger="no" isSoundTrigger="no" isColorTrigger="no" isColorTriggerFg="no" isColorTriggerBg="no">
+				<name>ishtar_cal_czas_trigger</name>
+				<script>if ishtar_cal and ishtar_cal.onCzasLine then
+  ishtar_cal.onCzasLine(line)
+end</script>
+				<triggerType>0</triggerType>
+				<conditonLineDelta>0</conditonLineDelta>
+				<mStayOpen>0</mStayOpen>
+				<mCommand />
+				<packageName />
+				<mFgColor>#ff0000</mFgColor>
+				<mBgColor>#ffff00</mBgColor>
+				<mSoundFile />
+				<colorTriggerFgColor>#000000</colorTriggerFgColor>
+				<colorTriggerBgColor>#000000</colorTriggerBgColor>
+				<regexCodeList>
+					<string>^Jest w przyblizeniu .* wedlug rachuby czasu Starszego Ludu\.?$</string>
+				</regexCodeList>
+				<regexCodePropertyList>
+					<integer>1</integer>
+				</regexCodePropertyList>
+			</Trigger>
+		</TriggerGroup>
+	</TriggerPackage>
+	<TimerPackage />
+	<AliasPackage>
+		<Alias isActive="yes" isFolder="no">
+			<name>ishtar_cal_alias</name>
+			<script>if ishtar_cal and ishtar_cal.onAlias then
+  ishtar_cal.onAlias()
+end</script>
+			<command />
+			<packageName />
+			<regex>^/ishtar$</regex>
+		</Alias>
+		<Alias isActive="yes" isFolder="no">
+			<name>ishtar_cal_help_alias</name>
+			<script>if ishtar_cal and ishtar_cal.onHelp then
+  ishtar_cal.onHelp()
+end</script>
+			<command />
+			<packageName />
+			<regex>^/ishtar\s+(?:help|pomoc)$</regex>
+		</Alias>
+	</AliasPackage>
+	<ActionPackage />
+	<ScriptPackage>
+		<Script isActive="yes" isFolder="no">
+			<name>ishtar_cal_init</name>
+			<eventHandlerList>
+				<string>sysLoadEvent</string>
+				<string>sysInstallPackage</string>
+			</eventHandlerList>
+			<script>
+-- ishtar_cal - Kalendarz Ishtar dla Mudlet (port pluginu Dargoth, silnik okien)
+-- Zrodlo czasu: komenda "czas" (parsowana wlasnym kalendarzem). Brak zaleznosci od GMCP.
+
+ishtar_cal = ishtar_cal or {}
+
+do
+
+local PLUGIN_VERSION = "1.8.11m"
+local PLUGIN_BUILD   = "24-06-2026"
+
+local REAL_SEC_PER_GAME_MINUTE = 2
+local GAME_MINUTES_PER_DAY     = 24 * 60
+local REQUEST_TIMEOUT_S        = 3.5
+local MAX_EYSENLAAN_OCCURRENCES = 2
+
+ishtar_cal.version = PLUGIN_VERSION
+ishtar_cal.build   = PLUGIN_BUILD
+
+local ISHTAR_SEASONS = {
+  "Yule", "Imbaelk", "Birke", "Blathe", "Feainn", "Lammas", "Velen", "Saovine",
+}
+local DAYS_PER_SEASON = 45
+local DAYS_PER_YEAR   = #ISHTAR_SEASONS * DAYS_PER_SEASON  -- 360
+local YEAR_TOTAL_GAME_MINUTES = DAYS_PER_YEAR * GAME_MINUTES_PER_DAY
+
+local SEASON_INDEX = {}
+for i, s in ipairs(ISHTAR_SEASONS) do SEASON_INDEX[s:lower()] = i - 1 end
+
+local SUNRISE_BY_SEASON_HOUR = {
+  Yule = 8, Imbaelk = 7, Birke = 6, Blathe = 5,
+  Feainn = 4, Lammas = 5, Velen = 7, Saovine = 6,
+}
+local SUNSET_BY_SEASON_HOUR = {
+  Yule = 16, Imbaelk = 18, Birke = 19, Blathe = 21,
+  Feainn = 20, Lammas = 20, Velen = 18, Saovine = 17,
+}
+
+local HOLIDAY_WINDOW_GAME_MINUTES = 24 * 60
+local BELLETEYN_DAY_OF_YEAR = 135
+local EYSENLAAN_FAIR_START_DAY_OF_MONTH = 6
+local EYSENLAAN_FAIR_DAYS = 3
+
+local FULL_MOON_WINDOWS_RAW = {
+  { 4, 6 }, { 28, 30 }, { 52, 54 }, { 76, 78 }, { 100, 102 },
+  { 124, 126 }, { 148, 150 }, { 172, 174 }, { 196, 198 }, { 222, 224 },
+  { 244, 246 }, { 268, 270 }, { 292, 294 }, { 316, 318 }, { 340, 342 },
+}
+
+local function trim(s)
+  return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function pad2(n)
+  return string.format("%02d", n)
+end
+
+local function clampDayOfYear(d)
+  if type(d) ~= "number" or d ~= d then return 1 end
+  return math.max(1, math.min(DAYS_PER_YEAR, math.floor(d)))
+end
+
+local function clampInt(n, minv, maxv)
+  if type(n) ~= "number" or n ~= n then return minv end
+  return math.max(minv, math.min(maxv, math.floor(n)))
+end
+
+local function isValidIshtarTime(dayOfYear, hours, minutes)
+  if type(dayOfYear) ~= "number" or type(hours) ~= "number" or type(minutes) ~= "number" then
+    return false
+  end
+  return dayOfYear &gt;= 1 and dayOfYear &lt;= DAYS_PER_YEAR
+     and hours &gt;= 0 and hours &lt;= 23
+     and minutes &gt;= 0 and minutes &lt;= 59
+end
+
+local function clampIshtarTime(dayOfYear, hours, minutes)
+  return {
+    dayOfYear = math.max(1, math.min(DAYS_PER_YEAR, math.floor(dayOfYear))),
+    hours     = math.max(0, math.min(23, math.floor(hours))),
+    minutes   = math.max(0, math.min(59, math.floor(minutes))),
+  }
+end
+
+local function momentToGameMinutes(dayOfYear, hour, minute)
+  local dayIndex = clampDayOfYear(dayOfYear) - 1
+  return dayIndex * GAME_MINUTES_PER_DAY + hour * 60 + minute
+end
+
+local function seasonIndexOf(season)
+  local idx = SEASON_INDEX[tostring(season):lower()]
+  return idx ~= nil and idx or -1
+end
+
+local function seasonOfDayOfYear(dayOfYear)
+  local d = clampDayOfYear(dayOfYear)
+  local idx = math.floor((d - 1) / DAYS_PER_SEASON)
+  idx = math.max(0, math.min(#ISHTAR_SEASONS - 1, idx))
+  return ISHTAR_SEASONS[idx + 1]
+end
+
+local function duskHourForDayOfYear(dayOfYear)
+  return SUNSET_BY_SEASON_HOUR[seasonOfDayOfYear(dayOfYear)]
+end
+
+local function boundaryStartDayOfYearForSeason(season)
+  local idx = seasonIndexOf(season)
+  if idx &lt; 0 then return 1 end
+  local prevIdx = (idx - 1 + #ISHTAR_SEASONS) % #ISHTAR_SEASONS
+  return prevIdx * DAYS_PER_SEASON + DAYS_PER_SEASON
+end
+
+-- Pelnia ksiezyca: stale dane empiryczne (start 00:00 dnia startDay, koniec 00:00 dnia endDay).
+local FULL_MOON_STARTS = {}
+for _, w in ipairs(FULL_MOON_WINDOWS_RAW) do
+  local startDay = clampDayOfYear(w[1])
+  local endDay   = clampDayOfYear(w[2])
+  if endDay &gt; startDay then
+    FULL_MOON_STARTS[#FULL_MOON_STARTS + 1] = {
+      startDay = startDay,
+      startMinuteOfYear = momentToGameMinutes(startDay, 0, 0),
+      windowMinutes = (endDay - startDay) * GAME_MINUTES_PER_DAY,
+    }
+  end
+end
+table.sort(FULL_MOON_STARTS, function(a, b) return a.startMinuteOfYear &lt; b.startMinuteOfYear end)
+
+local function buildHolidayEvents()
+  local defs = {}
+  local function addBoundary(id, name, kind, seasonStartsAtBoundary, emphasize)
+    local startDayOfYear = boundaryStartDayOfYearForSeason(seasonStartsAtBoundary)
+    defs[#defs + 1] = {
+      id = id, name = name, kind = kind,
+      startDayOfYear = startDayOfYear,
+      startHour = duskHourForDayOfYear(startDayOfYear),
+      startMinute = 0, emphasize = emphasize and true or false,
+      windowGameMinutes = HOLIDAY_WINDOW_GAME_MINUTES,
+    }
+  end
+  local function addFixed(id, name, kind, dayOfYear, emphasize, hour, minute, windowGM)
+    local startDayOfYear = clampDayOfYear(dayOfYear)
+    defs[#defs + 1] = {
+      id = id, name = name, kind = kind,
+      startDayOfYear = startDayOfYear,
+      startHour = (type(hour) == "number") and hour or duskHourForDayOfYear(startDayOfYear),
+      startMinute = (type(minute) == "number") and minute or 0,
+      emphasize = emphasize and true or false,
+      windowGameMinutes = (type(windowGM) == "number") and windowGM or HOLIDAY_WINDOW_GAME_MINUTES,
+    }
+  end
+
+  addBoundary("midinvaerne", "Midinvaerne", "astronomiczne", "Yule")
+  addBoundary("birke",       "Birke",       "astronomiczne", "Birke")
+  addBoundary("midaete",     "Midaete",     "astronomiczne", "Feainn")
+  addBoundary("velen",       "Velen",       "astronomiczne", "Velen")
+
+  addBoundary("imbaelk",   "Imbaelk",   "magiczne", "Imbaelk")
+  addFixed("belleteyn", "Belleteyn", "magiczne", BELLETEYN_DAY_OF_YEAR, true)
+  addBoundary("lammas",    "Lammas",    "magiczne", "Lammas")
+  addBoundary("saovine",   "Saovine",   "magiczne", "Saovine", true)
+
+  return defs
+end
+
+local HOLIDAYS = buildHolidayEvents()
+
+local function isWithinWindow(nowGM, startGM, windowGM, yearTotal)
+  local endv = startGM + windowGM
+  if endv &lt;= yearTotal then
+    return nowGM &gt;= startGM and nowGM &lt; endv
+  end
+  local endWrapped = endv - yearTotal
+  return nowGM &gt;= startGM or nowGM &lt; endWrapped
+end
+
+local function minutesUntilWindowEnd(nowGM, startGM, windowGM, yearTotal)
+  if windowGM &lt;= 0 then return 0 end
+  local endv = startGM + windowGM
+  if endv &lt;= yearTotal then
+    return math.max(0, endv - nowGM)
+  end
+  local endWrapped = endv - yearTotal
+  if nowGM &gt;= startGM then
+    return yearTotal - nowGM + endWrapped
+  end
+  return math.max(0, endWrapped - nowGM)
+end
+
+local function makeOccurrenceFromStart(def, nowGM, startGM, yearTotal)
+  local activeNow = isWithinWindow(nowGM, startGM, def.windowGameMinutes, yearTotal)
+  local deltaToStart = startGM - nowGM
+  if deltaToStart &lt; 0 then deltaToStart = deltaToStart + yearTotal end
+
+  if activeNow then
+    local untilEnd = minutesUntilWindowEnd(nowGM, startGM, def.windowGameMinutes, yearTotal)
+    return {
+      id = def.id, name = def.name, kind = def.kind,
+      emphasize = def.emphasize and true or false,
+      deltaToStart = 0,
+      activeNow = true,
+      windowGameMinutes = def.windowGameMinutes,
+      gameMinutesUntilEnd = untilEnd,
+    }
+  end
+
+  return {
+    id = def.id, name = def.name, kind = def.kind,
+    emphasize = def.emphasize and true or false,
+    deltaToStart = deltaToStart,
+    activeNow = false,
+    windowGameMinutes = def.windowGameMinutes,
+    gameMinutesUntilEnd = 0,
+  }
+end
+
+local function computeNextOccurrencesForFixed(def, nowGM, yearTotal)
+  local startDayOfYear = clampDayOfYear(def.startDayOfYear)
+  local startGM = momentToGameMinutes(startDayOfYear, def.startHour, def.startMinute)
+  return makeOccurrenceFromStart(def, nowGM, startGM, yearTotal)
+end
+
+local function computeFullMoonOccurrence(now)
+  local nowGM = momentToGameMinutes(now.dayOfYear, now.hours, now.minutes)
+  local function baseDef(startDay, windowMinutes)
+    return {
+      id = "pelnia", name = "Pelnia ksiezyca", kind = "ksiezycowe",
+      startDayOfYear = startDay, startHour = 0, startMinute = 0,
+      emphasize = true, windowGameMinutes = windowMinutes,
+    }
+  end
+
+  for _, w in ipairs(FULL_MOON_STARTS) do
+    local occ = makeOccurrenceFromStart(baseDef(w.startDay, w.windowMinutes),
+      nowGM, w.startMinuteOfYear, YEAR_TOTAL_GAME_MINUTES)
+    if occ.activeNow then return occ end
+  end
+
+  local best = nil
+  local bestDelta = math.huge
+  for _, w in ipairs(FULL_MOON_STARTS) do
+    local delta = w.startMinuteOfYear - nowGM
+    if delta &lt; 0 then delta = delta + YEAR_TOTAL_GAME_MINUTES end
+    if delta &lt; bestDelta then bestDelta = delta; best = w end
+  end
+
+  if not best then
+    return computeNextOccurrencesForFixed(baseDef(1, 0), nowGM, YEAR_TOTAL_GAME_MINUTES)
+  end
+  return makeOccurrenceFromStart(baseDef(best.startDay, best.windowMinutes),
+    nowGM, best.startMinuteOfYear, YEAR_TOTAL_GAME_MINUTES)
+end
+
+local function computeNextEysenlaanFairs(now)
+  local today = clampDayOfYear(now.dayOfYear)
+  local nowGM = momentToGameMinutes(today, now.hours, now.minutes)
+
+  local seasonIdx = math.floor((today - 1) / DAYS_PER_SEASON)
+  local seasonDayOfMonth = ((today - 1) % DAYS_PER_SEASON) + 1
+  local currentSeasonStart = seasonIdx * DAYS_PER_SEASON + 1
+  local nextSeasonIdx = (seasonIdx + 1) % #ISHTAR_SEASONS
+  local nextSeasonStart = nextSeasonIdx * DAYS_PER_SEASON + 1
+
+  local firstStartDayOfYear
+  if seasonDayOfMonth &lt;= EYSENLAAN_FAIR_START_DAY_OF_MONTH + EYSENLAAN_FAIR_DAYS - 1 then
+    firstStartDayOfYear = currentSeasonStart + (EYSENLAAN_FAIR_START_DAY_OF_MONTH - 1)
+  else
+    firstStartDayOfYear = nextSeasonStart + (EYSENLAAN_FAIR_START_DAY_OF_MONTH - 1)
+  end
+
+  local firstSeasonIdx = math.floor((clampDayOfYear(firstStartDayOfYear) - 1) / DAYS_PER_SEASON)
+  local secondSeasonStart = ((firstSeasonIdx + 1) % #ISHTAR_SEASONS) * DAYS_PER_SEASON + 1
+  local secondStartDayOfYear = secondSeasonStart + (EYSENLAAN_FAIR_START_DAY_OF_MONTH - 1)
+
+  local windowGM = EYSENLAAN_FAIR_DAYS * GAME_MINUTES_PER_DAY
+  local startsList = { clampDayOfYear(firstStartDayOfYear), clampDayOfYear(secondStartDayOfYear) }
+  local occ = {}
+  for _, day in ipairs(startsList) do
+    local def = {
+      id = "festyn_eysenlaan", name = "Festyn w Eysenlaan", kind = "lokalne",
+      startDayOfYear = day, startHour = 0, startMinute = 0,
+      emphasize = true, windowGameMinutes = windowGM,
+    }
+    local startGM = momentToGameMinutes(def.startDayOfYear, 0, 0)
+    occ[#occ + 1] = makeOccurrenceFromStart(def, nowGM, startGM, YEAR_TOTAL_GAME_MINUTES)
+  end
+
+  table.sort(occ, function(a, b) return a.deltaToStart &lt; b.deltaToStart end)
+  local out = {}
+  for i = 1, math.min(MAX_EYSENLAAN_OCCURRENCES, #occ) do out[i] = occ[i] end
+  return out
+end
+
+local function computeNextOccurrences(now)
+  local nowGM = momentToGameMinutes(now.dayOfYear, now.hours, now.minutes)
+  local all = {}
+  for _, def in ipairs(HOLIDAYS) do
+    all[#all + 1] = computeNextOccurrencesForFixed(def, nowGM, YEAR_TOTAL_GAME_MINUTES)
+  end
+  all[#all + 1] = computeFullMoonOccurrence(now)
+  for _, o in ipairs(computeNextEysenlaanFairs(now)) do all[#all + 1] = o end
+  table.sort(all, function(a, b) return a.deltaToStart &lt; b.deltaToStart end)
+  return all
+end
+
+local function mergeOccurrences(occ)
+  local fixedMap = {}
+  local fixedOrder = {}
+  local multi = {}
+
+  for _, o in ipairs(occ) do
+    local isMulti = (o.id == "festyn_eysenlaan")
+    local item = {
+      id = isMulti and (o.id .. "|" .. o.deltaToStart) or o.id,
+      name = o.name, kind = o.kind, emphasize = o.emphasize and true or false,
+      deltaToStart = o.deltaToStart, activeNow = o.activeNow,
+      windowGameMinutes = o.windowGameMinutes, gameMinutesUntilEnd = o.gameMinutesUntilEnd,
+    }
+    if isMulti then
+      multi[#multi + 1] = item
+    else
+      local existing = fixedMap[o.id]
+      if not (existing and existing.deltaToStart &lt;= o.deltaToStart) then
+        if not fixedMap[o.id] then fixedOrder[#fixedOrder + 1] = o.id end
+        fixedMap[o.id] = item
+      end
+    end
+  end
+
+  local merged = {}
+  for _, id in ipairs(fixedOrder) do merged[#merged + 1] = fixedMap[id] end
+  for _, m in ipairs(multi) do merged[#merged + 1] = m end
+  table.sort(merged, function(a, b) return a.deltaToStart &lt; b.deltaToStart end)
+  return merged
+end
+
+-- ---------- Formatowanie czasu RL (delta ishtar = PADDED) ----------
+local function addGameMinutes(baseSec, gm)
+  return baseSec + gm * REAL_SEC_PER_GAME_MINUTE
+end
+
+local function formatRealDateTime(ts)
+  local d = os.date("*t", ts)
+  return string.format("%s-%s-%d %s:%s",
+    pad2(d.day), pad2(d.month), d.year, pad2(d.hour), pad2(d.min))
+end
+
+local function formatRealDeltaFromGameMinutes(deltaGM)
+  local totalMinutes = math.max(0, math.floor((deltaGM * REAL_SEC_PER_GAME_MINUTE) / 60 + 0.5))
+  local days = math.floor(totalMinutes / (60 * 24))
+  local rest = totalMinutes - days * 60 * 24
+  local hrs  = math.floor(rest / 60)
+  local mins = rest % 60
+  return string.format("%dd %sh %sm", days, pad2(hrs), pad2(mins))
+end
+
+local function kindLabel(kind)
+  if kind == "astronomiczne" then return "swieto astronomiczne" end
+  if kind == "magiczne" then return "swieto magiczne" end
+  if kind == "lokalne" then return "festyn" end
+  return "wydarzenie ksiezycowe"
+end
+
+local function cleanName(name)
+  return (trim(name):gsub("%s+", " "))
+end
+
+local function formatEventLines(item, nowSec)
+  local name = cleanName(item.name)
+  local label = kindLabel(item.kind)
+  local lines = {}
+
+  if item.emphasize then
+    lines[#lines + 1] = string.format("  *** %s (%s) ***", name, label)
+  else
+    lines[#lines + 1] = string.format("  %s (%s)", name, label)
+  end
+
+  if item.activeNow then
+    if item.windowGameMinutes &gt; 0 then
+      local realEnd = addGameMinutes(nowSec, item.gameMinutesUntilEnd)
+      lines[#lines + 1] = string.format("    TRWA TERAZ (do %s)", formatRealDateTime(realEnd))
+    else
+      lines[#lines + 1] = "    TRWA TERAZ"
+    end
+    return lines
+  end
+
+  local realStartSec = addGameMinutes(nowSec, item.deltaToStart)
+  if item.windowGameMinutes &gt; 0 and item.kind == "lokalne" then
+    local realEnd = realStartSec + item.windowGameMinutes * REAL_SEC_PER_GAME_MINUTE
+    lines[#lines + 1] = string.format("    Od:      %s", formatRealDateTime(realStartSec))
+    lines[#lines + 1] = string.format("    Do:      %s", formatRealDateTime(realEnd))
+    lines[#lines + 1] = string.format("    Za:      %s", formatRealDeltaFromGameMinutes(item.deltaToStart))
+  else
+    lines[#lines + 1] = string.format("    Data RL: %s", formatRealDateTime(realStartSec))
+    lines[#lines + 1] = string.format("    Za:      %s", formatRealDeltaFromGameMinutes(item.deltaToStart))
+  end
+  return lines
+end
+
+local function formatMainMagicLines(item, nowSec)
+  local name = cleanName(item.name)
+  local lines = {}
+
+  if item.id == "belleteyn" then
+    lines[#lines + 1] = string.format("  *** %s (dzien %d) ***", name, BELLETEYN_DAY_OF_YEAR)
+  else
+    lines[#lines + 1] = string.format("  *** %s ***", name)
+  end
+
+  if item.activeNow then
+    if item.windowGameMinutes &gt; 0 then
+      local realEnd = addGameMinutes(nowSec, item.gameMinutesUntilEnd)
+      lines[#lines + 1] = string.format("    TRWA TERAZ (do %s)", formatRealDateTime(realEnd))
+    else
+      lines[#lines + 1] = "    TRWA TERAZ"
+    end
+    return lines
+  end
+
+  local realStartSec = addGameMinutes(nowSec, item.deltaToStart)
+  lines[#lines + 1] = string.format("    Data RL: %s", formatRealDateTime(realStartSec))
+  lines[#lines + 1] = string.format("    Za:      %s", formatRealDeltaFromGameMinutes(item.deltaToStart))
+  return lines
+end
+
+local function buildResultLines(now, nowSecOpt)
+  local nowSec = nowSecOpt or os.time()
+  local upcoming = mergeOccurrences(computeNextOccurrences(now))
+
+  local mainMagic = {}
+  local other = {}
+  for _, item in ipairs(upcoming) do
+    if item.kind == "magiczne" and item.emphasize then
+      mainMagic[#mainMagic + 1] = item
+    else
+      other[#other + 1] = item
+    end
+  end
+
+  local lines = {}
+  lines[#lines + 1] = "Glowne swieta magiczne:"
+  for _, item in ipairs(mainMagic) do
+    for _, l in ipairs(formatMainMagicLines(item, nowSec)) do lines[#lines + 1] = l end
+  end
+
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "Inne najblizsze wydarzenia:"
+  for _, ev in ipairs(other) do
+    for _, l in ipairs(formatEventLines(ev, nowSec)) do lines[#lines + 1] = l end
+  end
+
+  return lines
+end
+
+-- ---------- Parsowanie odpowiedzi "czas" ----------
+local UNITS = {
+  pierwszy=1,pierwsza=1,pierwsze=1, drugi=2,druga=2,drugie=2, trzeci=3,trzecia=3,trzecie=3,
+  czwarty=4,czwarta=4,czwarte=4, piaty=5,piata=5,piate=5, szosty=6,szosta=6,szoste=6,
+  siodmy=7,siodma=7,siodme=7, osmy=8,osma=8,osme=8, dziewiaty=9,dziewiata=9,dziewiate=9,
+  dziesiaty=10,dziesiata=10,dziesiate=10, jedenasty=11,jedenasta=11,jedenaste=11,
+  dwunasty=12,dwunasta=12,dwunaste=12, trzynasty=13,trzynasta=13,trzynaste=13,
+  czternasty=14,czternasta=14,czternaste=14, pietnasty=15,pietnasta=15,pietnaste=15,
+  szesnasty=16,szesnasta=16,szesnaste=16, siedemnasty=17,siedemnasta=17,siedemnaste=17,
+  osiemnasty=18,osiemnasta=18,osiemnaste=18, dziewietnasty=19,dziewietnasta=19,dziewietnaste=19,
+}
+local TENS = {
+  dwudziesty=20,dwudziesta=20,dwudzieste=20, trzydziesty=30,trzydziesta=30,trzydzieste=30,
+  czterdziesty=40,czterdziesta=40,czterdzieste=40,
+}
+
+local function parsePolishOrdinalDay(words)
+  local w = trim(words:lower())
+  if UNITS[w] then return UNITS[w] end
+  if TENS[w] then return TENS[w] end
+  local p1, p2 = w:match("^(%a+)[%s%-]+(%a+)$")
+  if p1 and p2 then
+    local t = TENS[p1]; local u = UNITS[p2]
+    if type(t) == "number" and type(u) == "number" then return t + u end
+  end
+  return nil
+end
+
+local HOUR_WORD_VALUE = {
+  polnoc = 0, pierwsza = 1, druga = 2, trzecia = 3, czwarta = 4,
+  piata = 5, szosta = 6, siodma = 7, osma = 8, dziewiata = 9,
+  dziesiata = 10, jedenasta = 11, dwunasta = 12, poludnie = 12,
+}
+
+local HOUR_PREFIX = { w = true, po = true, przed = true, nad = true, poznym = true }
+local DAYTIME_SET = {
+  dzien = true, nocy = true, poludniu = true, poludniem = true,
+  poludnie = true, rano = true, ranem = true, wieczorem = true,
+}
+
+local function parseHourFromCzasLine(lc)
+  local hourWord = lc:match("^jest w przyblizeniu (%a+)")
+  if not hourWord then return nil end
+  local value = HOUR_WORD_VALUE[hourWord]
+  if type(value) ~= "number" then return nil end
+
+  local rest = lc:match("^jest w przyblizeniu %a+%s+(.*)$") or ""
+  local firstWord = rest:match("^(%a+)")
+  if firstWord and HOUR_PREFIX[firstWord] then
+    rest = rest:gsub("^%a+%s*", "")
+  end
+  local dtWord = rest:match("^(%a+)")
+  local daytime = (dtWord and DAYTIME_SET[dtWord]) and dtWord or ""
+
+  local hours = value
+  if daytime == "poludniu" or daytime == "wieczorem" or (daytime == "nocy" and value &gt;= 6) then
+    hours = hours + 12
+  end
+  if hours &gt; 23 then hours = 0 end
+  return hours
+end
+
+local function parseIshtarTimeFromCzasLine(text)
+  local hours = parseHourFromCzasLine(text:lower())
+  if hours == nil then return nil end
+  local lc = text:lower()
+
+  -- "X dzien pory &lt;Sezon&gt;" (numeryczny)
+  local numDay, numSeason = lc:match("(%d%d?)%s*dzien%s+pory%s+(%a+)")
+  if numDay and numSeason then
+    local idx = seasonIndexOf(numSeason)
+    local dayOfMonth = tonumber(numDay)
+    if idx &gt;= 0 and dayOfMonth and dayOfMonth &gt;= 1 and dayOfMonth &lt;= DAYS_PER_SEASON then
+      return { hours = hours, dayOfYear = idx * DAYS_PER_SEASON + dayOfMonth }
+    end
+  end
+
+  -- "&lt;slownie&gt; dzien pory &lt;Sezon&gt;"
+  local before, wordSeason = lc:match("(.-)dzien pory%s+(%a+)")
+  if before and wordSeason then
+    local idx = seasonIndexOf(wordSeason)
+    if idx &gt;= 0 then
+      before = trim(before)
+      local dayNum = nil
+      local p1, p2 = before:match("(%a+)[%s%-]+(%a+)$")
+      if p1 and p2 then dayNum = parsePolishOrdinalDay(p1 .. " " .. p2) end
+      if not dayNum then
+        local lastWord = before:match("(%a+)$")
+        if lastWord then dayNum = parsePolishOrdinalDay(lastWord) end
+      end
+      if dayNum and dayNum &gt;= 1 and dayNum &lt;= DAYS_PER_SEASON then
+        return { hours = hours, dayOfYear = idx * DAYS_PER_SEASON + dayNum }
+      end
+    end
+  end
+
+  -- Dni specjalne identyfikowane nazwa wydarzenia z HOLIDAYS (dzien empirycznie staly).
+  for _, holiday in ipairs(HOLIDAYS) do
+    local name = holiday.name:lower()
+    if lc:find("%f[%a]" .. name .. "%f[%A]") then
+      return { hours = hours, dayOfYear = holiday.startDayOfYear }
+    end
+  end
+
+  return nil
+end
+
+local function stripAnsi(s)
+  return (s:gsub("\27%[[0-9;%?]*[ -/]*[@-~]", ""))
+end
+
+local function sanitizeCzasLine(line)
+  local s = stripAnsi(line or "")
+  local bi = s:find("%[")
+  if bi then s = s:sub(1, bi - 1) end
+  s = s:gsub("^%s*&gt;%s*", "")
+  s = s:gsub("%s+", " ")
+  return trim(s)
+end
+
+local function isLikelyIshtarCzasLine(raw)
+  local lc = raw:lower()
+  if lc:sub(1, 19) ~= "jest w przyblizeniu" then return false end
+  return lc:find("wedlug rachuby czasu starszego ludu", 1, true) ~= nil
+end
+
+-- ---------- Wyjscie (kolory cecho, znormalizowane wspolnie z imperium) ----------
+local C_HEADER = "&lt;yellow&gt;"
+local C_STAR   = "&lt;cyan&gt;"
+local C_NOW    = "&lt;green&gt;"
+local C_DATA   = "&lt;white&gt;"
+local C_SEP    = "&lt;cyan&gt;"
+local C_RESET  = "&lt;reset&gt;"
+
+local function colorForLine(l)
+  if l == "" then return C_RESET end
+  if l:find("TRWA TERAZ", 1, true) or l:find("+++", 1, true) then return C_NOW end
+  if l:find("***", 1, true) then return C_STAR end
+  if l:sub(1, 1) ~= " " and l:sub(-1) == ":" then return C_HEADER end
+  return C_DATA
+end
+
+local function safeCecho(s)
+  if cecho then cecho(s) else io.write((s:gsub("&lt;%a+&gt;", ""))) end
+end
+
+local function printFramedReport(lines)
+  safeCecho("\n\n" .. C_SEP .. "---" .. C_RESET .. "\n")
+  for _, l in ipairs(lines) do
+    safeCecho(colorForLine(l) .. l .. C_RESET .. "\n")
+  end
+  safeCecho(C_SEP .. "---" .. C_RESET .. "\n\n")
+end
+
+local MSG_INTERNAL = { "Blad wewnetrzny kalendarza Ishtar - nie mozna wyliczyc danych." }
+local MSG_TIMEOUT = {
+  "Brak odpowiedzi na komende 'czas' (timeout) i nie mam zapamietanej daty.",
+  "Sprawdz, czy 'czas' dziala, i sprobuj ponownie.",
+}
+
+local function printUnable()
+  printFramedReport(MSG_INTERNAL)
+end
+
+local function printTimeout()
+  printFramedReport(MSG_TIMEOUT)
+end
+
+local function runIshtarReport(now)
+  local ok = pcall(function() printFramedReport(buildResultLines(now)) end)
+  if not ok then printUnable() end
+end
+
+-- ---------- Stan i kotwica (w pamieci) ----------
+local pendingRequest = false
+local anchor = nil
+
+local function clearPending()
+  pendingRequest = false
+end
+
+local function saveTimeAnchor(dayOfYear, hour, minute)
+  anchor = {
+    dayOfYear = clampInt(dayOfYear, 1, DAYS_PER_YEAR),
+    hour      = clampInt(hour, 0, 23),
+    minute    = clampInt(minute, 0, 59),
+    rlSec     = os.time(),
+  }
+end
+
+local function extrapolateFromAnchor(a, nowSec)
+  local elapsedSec = nowSec - a.rlSec
+  if elapsedSec &lt; 0 then return nil end
+  local elapsedGameMinutes = math.floor(elapsedSec / REAL_SEC_PER_GAME_MINUTE)
+  local yearTotal = YEAR_TOTAL_GAME_MINUTES
+  local anchorTotal = (a.dayOfYear - 1) * GAME_MINUTES_PER_DAY + a.hour * 60 + a.minute
+  local nowTotal = ((anchorTotal + elapsedGameMinutes) % yearTotal + yearTotal) % yearTotal
+  local rem = nowTotal % GAME_MINUTES_PER_DAY
+  return clampIshtarTime(
+    math.floor(nowTotal / GAME_MINUTES_PER_DAY) + 1,
+    math.floor(rem / 60),
+    rem % 60
+  )
+end
+
+local function tryFinishFromAnchor()
+  if not pendingRequest then return false end
+  if not anchor then return false end
+  local now = extrapolateFromAnchor(anchor, os.time())
+  if not now or not isValidIshtarTime(now.dayOfYear, now.hours, now.minutes) then return false end
+  clearPending()
+  runIshtarReport(now)
+  return true
+end
+
+-- ---------- Handlery (wywolywane przez trigger / alias z XML) ----------
+function ishtar_cal.onCzasLine(lineText)
+  if not pendingRequest then return end
+  local raw = sanitizeCzasLine(lineText)
+  if not isLikelyIshtarCzasLine(raw) then return end
+
+  local parsed = parseIshtarTimeFromCzasLine(raw)
+  if not parsed or not isValidIshtarTime(parsed.dayOfYear, parsed.hours, 0) then return end
+
+  if deleteLine then deleteLine() end
+
+  saveTimeAnchor(parsed.dayOfYear, parsed.hours, 0)
+  clearPending()
+  runIshtarReport({ dayOfYear = parsed.dayOfYear, hours = parsed.hours, minutes = 0 })
+end
+
+function ishtar_cal.onAlias()
+  if pendingRequest then return end
+  pendingRequest = true
+  if send then send("czas", false) end
+
+  if tempTimer then
+    tempTimer(REQUEST_TIMEOUT_S + 0.05, function()
+      if not pendingRequest then return end
+      if tryFinishFromAnchor() then return end
+      clearPending()
+      printTimeout()
+    end)
+  end
+end
+
+function ishtar_cal.onHelp()
+  local L = {
+    "Kalendarz Ishtar  (v" .. PLUGIN_VERSION .. " | " .. PLUGIN_BUILD .. ")",
+    "",
+    "Plugin wylicza przyblizony czas do najblizszych swiat i wydarzen w",
+    "domenie Starszego Ludu (Ishtar) na podstawie odpowiedzi serwera na",
+    "komende 'czas'. Kalendarz: 360 dni arkowych (8 savoedow po 45 dni).",
+    "",
+    "Uzycie:",
+    "  /ishtar        - przelicz i pokaz kalendarz",
+    "  /ishtar help   - ta pomoc",
+    "",
+    "Godziny wschodu/zachodu sa ustalone empirycznie dla kazdego savoedu.",
+    "Belleteyn, Saovine, pelnia oraz festyn w Eysenlaan sa wyroznione",
+    "gwiazdkami. Festyn (6.-8. dzien savoedu) pokazany jako przedzial od-do",
+    "(2 najblizsze wystapienia). Jesli event aktualnie trwa, wyswietlany",
+    "jest komunikat TRWA TERAZ z godzina zakonczenia.",
+    "Przeliczenie: 120 sekund RL = 1 godzina IG (przyblizenie).",
+    "Jesli nie uda sie odczytac 'czas', plugin nie zgaduje danych.",
+  }
+  safeCecho("\n" .. C_SEP .. "---" .. C_RESET .. "\n")
+  for i, l in ipairs(L) do
+    local col = (i == 1) and C_HEADER or ((l:sub(-1) == ":") and C_HEADER or C_DATA)
+    safeCecho(col .. l .. C_RESET .. "\n")
+  end
+  safeCecho(C_SEP .. "---" .. C_RESET .. "\n\n")
+end
+
+function ishtar_cal_init(event, arg)
+  if event == "sysInstallPackage" and arg ~= "ishtar_cal" then return end
+  if cecho then
+    cecho("&lt;green&gt;[ishtar_cal]&lt;reset&gt; Kalendarz Ishtar v" .. PLUGIN_VERSION ..
+          " zaladowany. Wpisz &lt;yellow&gt;/ishtar&lt;reset&gt; (pomoc: &lt;yellow&gt;/ishtar help&lt;reset&gt;).\n")
+  end
+end
+
+-- Hooki dla testow jednostkowych (uzywane tez przez handlery powyzej).
+ishtar_cal._test = {
+  buildResultLines           = buildResultLines,
+  parseIshtarTimeFromCzasLine= parseIshtarTimeFromCzasLine,
+  sanitizeCzasLine           = sanitizeCzasLine,
+  parseHourFromCzasLine      = parseHourFromCzasLine,
+  parsePolishOrdinalDay      = parsePolishOrdinalDay,
+  extrapolateFromAnchor      = extrapolateFromAnchor,
+  boundaryStartDayOfYearForSeason = boundaryStartDayOfYearForSeason,
+  holidays                   = HOLIDAYS,
+  fullMoonStarts             = FULL_MOON_STARTS,
+  computeNextOccurrences     = computeNextOccurrences,
+  mergeOccurrences           = mergeOccurrences,
+}
+
+end
+
+</script>
+		</Script>
+	</ScriptPackage>
+	<KeyPackage />
+	<HelpPackage>
+		<helpURL />
+	</HelpPackage>
+</MudletPackage>
