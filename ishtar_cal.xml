@@ -818,6 +818,7 @@ ishtar_cal._test = {
   parsePolishOrdinalDay      = parsePolishOrdinalDay,
   extrapolateFromAnchor      = extrapolateFromAnchor,
   boundaryStartDayOfYearForSeason = boundaryStartDayOfYearForSeason,
+  duskHourForDayOfYear        = duskHourForDayOfYear,
   holidays                   = HOLIDAYS,
   fullMoonStarts             = FULL_MOON_STARTS,
   computeNextOccurrences     = computeNextOccurrences,
