@@ -37,6 +37,28 @@ end</script>
 					<integer>1</integer>
 				</regexCodePropertyList>
 			</Trigger>
+			<Trigger isActive="yes" isFolder="no" isTempTrigger="no" isMultiline="no" isPerlSlashGOption="no" isColorizerTrigger="no" isFilterTrigger="no" isSoundTrigger="no" isColorTrigger="no" isColorTriggerFg="no" isColorTriggerBg="no">
+				<name>ishtar_cal_cross_trigger</name>
+				<script>if ishtar_cal and ishtar_cal.onCrossLine then
+  ishtar_cal.onCrossLine(line)
+end</script>
+				<triggerType>0</triggerType>
+				<conditonLineDelta>0</conditonLineDelta>
+				<mStayOpen>0</mStayOpen>
+				<mCommand />
+				<packageName />
+				<mFgColor>#ff0000</mFgColor>
+				<mBgColor>#ffff00</mBgColor>
+				<mSoundFile />
+				<colorTriggerFgColor>#000000</colorTriggerFgColor>
+				<colorTriggerBgColor>#000000</colorTriggerBgColor>
+				<regexCodeList>
+					<string>^Jest w przyblizeniu .* wedlug Kalendarza Imperialnego\.?$</string>
+				</regexCodeList>
+				<regexCodePropertyList>
+					<integer>1</integer>
+				</regexCodePropertyList>
+			</Trigger>
 		</TriggerGroup>
 	</TriggerPackage>
 	<TimerPackage />
@@ -76,8 +98,8 @@ ishtar_cal = ishtar_cal or {}
 
 do
 
-local PLUGIN_VERSION = "1.8.12m"
-local PLUGIN_BUILD   = "20-08-2026"
+local PLUGIN_VERSION = "1.8.13m"
+local PLUGIN_BUILD   = "23-08-2026"
 
 local REAL_SEC_PER_GAME_MINUTE = 2
 local GAME_MINUTES_PER_DAY     = 24 * 60
@@ -653,6 +675,12 @@ local function isLikelyIshtarCzasLine(raw)
   return lc:find("wedlug rachuby czasu starszego ludu", 1, true) ~= nil
 end
 
+local function isLikelyImperiumCzasLine(raw)
+  local lc = raw:lower()
+  if lc:sub(1, 19) ~= "jest w przyblizeniu" then return false end
+  return lc:find("kalendarza imperialnego", 1, true) ~= nil
+end
+
 -- ---------- Wyjscie (kolory cecho, znormalizowane wspolnie z imperium) ----------
 local C_HEADER = "&lt;yellow&gt;"
 local C_STAR   = "&lt;cyan&gt;"
@@ -685,6 +713,11 @@ local MSG_INTERNAL = { "Blad wewnetrzny kalendarza Ishtar - nie mozna wyliczyc d
 local MSG_TIMEOUT = {
   "Brak odpowiedzi na komende 'czas' (timeout) i nie mam zapamietanej daty.",
   "Sprawdz, czy 'czas' dziala, i sprobuj ponownie.",
+}
+-- Zla domena (A3) - komunikat 1:1 z klientem WWW.
+local MSG_CROSS_DOMAIN = {
+  "Otrzymano czas Imperium - postac jest w domenie Imperium.",
+  "Uzyj /imperium zamiast /ishtar.",
 }
 
 local function printUnable()
@@ -756,6 +789,19 @@ function ishtar_cal.onCzasLine(lineText)
   saveTimeAnchor(parsed.dayOfYear, parsed.hours, 0)
   clearPending()
   runIshtarReport({ dayOfYear = parsed.dayOfYear, hours = parsed.hours, minutes = 0 })
+end
+
+-- Zla domena (A3, jak w kliencie WWW): tylko przy wlasnym pending -
+-- komunikat, gag linii, kasowanie pending (bez raportu i bez timeoutu).
+function ishtar_cal.onCrossLine(lineText)
+  if not pendingRequest then return end
+  local raw = sanitizeCzasLine(lineText)
+  if not isLikelyImperiumCzasLine(raw) then return end
+
+  if deleteLine then deleteLine() end
+
+  clearPending()
+  printFramedReport(MSG_CROSS_DOMAIN)
 end
 
 function ishtar_cal.onAlias()
