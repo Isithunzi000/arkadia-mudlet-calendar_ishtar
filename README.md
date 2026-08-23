@@ -24,6 +24,7 @@ Plik [`ishtar_cal.xml`](ishtar_cal.xml) w korzeniu repo to źródło pakietu —
 |---------|------|
 | `/ishtar` | pokazuje kalendarz Ishtar |
 | `/ishtar help` | pomoc (działa też `/ishtar pomoc`) |
+| `/ishtar aktualizuj` | sprawdza i instaluje aktualizację z GitHub Releases |
 
 ## Co pokazuje
 
@@ -43,6 +44,12 @@ Plik [`ishtar_cal.xml`](ishtar_cal.xml) w korzeniu repo to źródło pakietu —
 - jeśli serwer nie odpowie na `czas` w ciągu 3,5 s i nie ma zapisanej daty, zobaczysz komunikat o błędzie
 
 > W mudlet-web (Mudlet w przeglądarce) zapis działa przez IndexedDB — per origin i profil, best-effort (np. czyszczenie danych przeglądarki kasuje kotwicę).
+
+---
+
+## Aktualizacje
+
+Pakiet sam sprawdza aktualizacje: przy starcie klienta (nie częściej niż co 8 godzin) pyta o najnowsze wydanie na GitHubie i — jeśli jest nowsza wersja — wyświetla powiadomienie. Sam nic nie instaluje: aktualizację uruchamiasz świadomie komendą `/ishtar aktualizuj`, która pobiera paczkę, podmienia ją i prosi o restart Mudleta.
 
 ---
 
