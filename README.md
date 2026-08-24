@@ -54,6 +54,17 @@ Plik [`ishtar_cal.xml`](ishtar_cal.xml) w korzeniu repo to źródło pakietu —
 
 Pakiet sam sprawdza aktualizacje: przy starcie klienta (nie częściej niż co 8 godzin) pyta o najnowsze wydanie na GitHubie i — jeśli jest nowsza wersja — wyświetla powiadomienie. Sam nic nie instaluje: aktualizację uruchamiasz świadomie komendą `/ishtar aktualizuj`, która pobiera paczkę, podmienia ją i prosi o restart Mudleta.
 
+Od wersji **1.8.19m** assety wydania mają stałe nazwy (`ishtar_cal.mpackage`, `ishtar_cal.xml`), a aktualizator przed instalacją sprząta historyczne nazwy pakietów — jedna paczka zostaje w profilu zawsze pod nazwą `ishtar_cal`.
+
+### Mudlet web — jednorazowe czyszczenie
+
+Starsze wydania na mudlet-web (Mudlet w przeglądarce) brały nazwę paczki od nazwy pliku, więc po aktualizacjach mogły zostać duplikaty. Po zainstalowaniu wersji 1.8.19m lub nowszej otwórz **Package Manager** i odinstaluj ręcznie wszystkie pozycje z poniższej listy, jeśli je widzisz (zostaw tylko `ishtar_cal`):
+
+- `ishtar_cal_update`
+- `ishtar_cal_1_8_11m`, `ishtar_cal_1_8_12m`, `ishtar_cal_1_8_13m`, `ishtar_cal_1_8_14m`, `ishtar_cal_1_8_15m`, `ishtar_cal_1_8_16m`, `ishtar_cal_1_8_17m`, `ishtar_cal_1_8_18m`
+
+To czyszczenie robisz tylko raz — kolejne aktualizacje sprzątają te nazwy samoczynnie.
+
 ---
 
 ## Problemy z instalacją
