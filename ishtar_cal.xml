@@ -90,6 +90,15 @@ end</script>
 			<packageName />
 			<regex>^/ishtar\s+aktualizuj$</regex>
 		</Alias>
+		<Alias isActive="yes" isFolder="no">
+			<name>ishtar_cal_reset_alias</name>
+			<script>if ishtar_cal and ishtar_cal.onReset then
+  ishtar_cal.onReset()
+end</script>
+			<command />
+			<packageName />
+			<regex>^/ishtar\s+reset$</regex>
+		</Alias>
 	</AliasPackage>
 	<ActionPackage />
 	<ScriptPackage>
@@ -107,7 +116,7 @@ ishtar_cal = ishtar_cal or {}
 
 do
 
-local PLUGIN_VERSION = "1.8.17m"
+local PLUGIN_VERSION = "1.8.18m"
 local PLUGIN_BUILD   = "24-08-2026"
 
 local REAL_SEC_PER_GAME_MINUTE = 2
@@ -734,6 +743,10 @@ local MSG_CROSS_NO_ANCHOR = {
   "Bedac w domenie Ishtar, uzyj komendy /ishtar - odczyt zapisze date na przyszlosc.",
 }
 
+local MSG_RESET_DONE = {
+  "Kotwica Ishtar wyczyszczona. Uzyj /ishtar na zewnatrz, zeby zapisac nowa.",
+}
+
 local function printUnable()
   printFramedReport(MSG_INTERNAL)
 end
@@ -749,6 +762,7 @@ end
 
 -- ---------- Stan i kotwica (w pamieci) ----------
 local pendingRequest = false
+local requestStartSec = nil
 local anchor = nil
 
 -- ---------- Persystencja kotwicy (rekord v2 na dysku profilu) ----------
@@ -802,6 +816,7 @@ end
 
 local function clearPending()
   pendingRequest = false
+  requestStartSec = nil
 end
 
 local function saveTimeAnchor(dayOfYear, hour, minute)
@@ -845,16 +860,23 @@ end
 
 -- ---------- Handlery (wywolywane przez trigger / alias z XML) ----------
 function ishtar_cal.onCzasLine(lineText)
-  if not pendingRequest then return end
   local raw = sanitizeCzasLine(lineText)
   if not isLikelyIshtarCzasLine(raw) then return end
 
   local parsed = parseIshtarTimeFromCzasLine(raw)
   if not parsed or not isValidIshtarTime(parsed.dayOfYear, parsed.hours, 0) then return end
 
+  -- O1: kotwica z KAZDEJ poprawnie sparsowanej linii wlasnej domeny,
+  -- takze bez pending (np. linia z /pasek, reczne 'czas', cudzy skrypt).
+  saveTimeAnchor(parsed.dayOfYear, parsed.hours, 0)
+
+  if not pendingRequest then return end
+  -- Okno stale (paritet z www/dargoth): spozniona linia przy wiszacym
+  -- pending nie dostaje gagu ani raportu; kotwica juz zapisana wyzej.
+  if requestStartSec and os.time() - requestStartSec &gt; REQUEST_TIMEOUT_S + 0.2 then return end
+
   if deleteLine then deleteLine() end
 
-  saveTimeAnchor(parsed.dayOfYear, parsed.hours, 0)
   clearPending()
   runIshtarReport({ dayOfYear = parsed.dayOfYear, hours = parsed.hours, minutes = 0 })
 end
@@ -864,6 +886,7 @@ end
 -- zadanej domeny z jej zapisanej daty (wariant A) lub komunikat S6.
 function ishtar_cal.onCrossLine(lineText)
   if not pendingRequest then return end
+  if requestStartSec and os.time() - requestStartSec &gt; REQUEST_TIMEOUT_S + 0.2 then return end
   local raw = sanitizeCzasLine(lineText)
   if not isLikelyImperiumCzasLine(raw) then return end
 
@@ -889,6 +912,7 @@ end
 function ishtar_cal.onAlias()
   if pendingRequest then return end
   pendingRequest = true
+  requestStartSec = os.time()
   if send then send("czas", false) end
 
   if tempTimer then
@@ -899,6 +923,16 @@ function ishtar_cal.onAlias()
       printTimeout()
     end)
   end
+end
+
+-- /ishtar reset (G2): czysci WYLACZNIE kotwice wlasnej domeny (RAM + plik),
+-- nie rusza cache'u updatera ani niczego innego. Idempotentny. Kotwica
+-- nie wygasa - reset to swiadome czyszczenie na zadanie gracza.
+function ishtar_cal.onReset()
+  anchor = nil
+  local path = anchorFilePath()
+  if path and os.remove then os.remove(path) end
+  printFramedReport(MSG_RESET_DONE)
 end
 
 function ishtar_cal.onHelp()
@@ -913,6 +947,7 @@ function ishtar_cal.onHelp()
     "  /ishtar        - przelicz i pokaz kalendarz",
     "  /ishtar help   - ta pomoc",
     "  /ishtar aktualizuj - sprawdz i zainstaluj aktualizacje",
+    "  /ishtar reset  - wyczysc zapisana date (kotwice)",
     "",
     "Godziny wschodu/zachodu sa ustalone empirycznie dla kazdego savoedu.",
     "Belleteyn, Saovine, pelnia oraz festyn w Eysenlaan sa wyroznione",
