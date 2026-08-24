@@ -24,6 +24,7 @@ Plik [`ishtar_cal.xml`](ishtar_cal.xml) w korzeniu repo to źródło pakietu —
 |---------|------|
 | `/ishtar` | pokazuje kalendarz Ishtar |
 | `/ishtar help` | pomoc (działa też `/ishtar pomoc`) |
+| `/ishtar reset` | czyści zapisaną datę (kotwicę) |
 | `/ishtar aktualizuj` | sprawdza i instaluje aktualizację z GitHub Releases |
 
 ## Co pokazuje
@@ -38,10 +39,12 @@ Plik [`ishtar_cal.xml`](ishtar_cal.xml) w korzeniu repo to źródło pakietu —
 
 - przy wywołaniu `/ishtar` pakiet sam wysyła komendę `czas` i parsuje odpowiedź serwera (linia jest ukrywana z okna gry)
 - udany odczyt zapisuje się jako **kotwica** (czas IG + timestamp RL) — to zapas na wypadek błędu odczytu, nie skrót: pakiet zawsze pyta serwer
-- kotwica zapisuje się na dysku profilu (`ishtar_cal_anchor_v2.lua`) i przeżywa restart klienta; uszkodzony, stary albo obcy plik jest po cichu ignorowany
+- kotwica odnawia się też **pasywnie**: każda poprawna odpowiedź serwera na `czas` zapisuje datę, nawet gdy nikt nie wywołał `/ishtar` (np. gdy o `czas` poprosił inny pakiet) — linia zostaje wtedy w oknie gry i nie ma raportu
+- kotwica zapisuje się na dysku profilu (`ishtar_cal_anchor_v2.lua`) i przeżywa restart klienta; uszkodzony, stary albo obcy plik jest po cichu ignorowany; `/ishtar reset` usuwa kotwicę z dysku i pamięci
 - gdy odczyt `czas` się nie powiedzie albo postać jest w innej domenie, pakiet liczy z zapisanej daty i **mówi o tym** — przed raportem pojawia się linia „Pokazuje Ishtar wyliczone z zapisanej daty (ostatni odczyt: …)"
 - gdy zapisanej daty nie ma, pakiet wyświetla komunikat zamiast zgadywać
 - jeśli serwer nie odpowie na `czas` w ciągu 3,5 s i nie ma zapisanej daty, zobaczysz komunikat o błędzie
+- gdy odpowiedź przyjdzie po upływie timeoutu (np. przez throttle'owanie timerów w mudlet-web), linia `czas` zostaje widoczna, a pakiet zapisuje tylko kotwicę — bez raportu i bez komunikatów (paritet z klientami przeglądarkowymi)
 
 > W mudlet-web (Mudlet w przeglądarce) zapis działa przez IndexedDB — per origin i profil, best-effort (np. czyszczenie danych przeglądarki kasuje kotwicę).
 
