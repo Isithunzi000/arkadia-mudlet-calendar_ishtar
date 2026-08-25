@@ -116,7 +116,7 @@ ishtar_cal = ishtar_cal or {}
 
 do
 
-local PLUGIN_VERSION = "1.8.20m"
+local PLUGIN_VERSION = "1.8.21m"
 local PLUGIN_BUILD   = "25-08-2026"
 
 local REAL_SEC_PER_GAME_MINUTE = 2
@@ -727,24 +727,24 @@ local function printFramedReport(lines)
   safeCecho(C_SEP .. "---" .. C_RESET .. "\n\n")
 end
 
-local MSG_INTERNAL = { "Blad wewnetrzny kalendarza Ishtar - nie mozna wyliczyc danych." }
+local MSG_INTERNAL = { "[ishtar_cal] Blad wewnetrzny kalendarza Ishtar - nie mozna wyliczyc danych." }
 local MSG_TIMEOUT = {
-  "Brak odpowiedzi na komende 'czas' (timeout) i nie mam zapamietanej daty.",
+  "[ishtar_cal] Brak odpowiedzi na komende 'czas' (timeout) i nie mam zapamietanej daty.",
   "Sprawdz, czy 'czas' dziala, i sprobuj ponownie.",
 }
 -- Zla domena (A3) - komunikat 1:1 z klientem WWW.
 local MSG_CROSS_DOMAIN = {
-  "Otrzymano czas Imperium - postac jest w domenie Imperium.",
+  "[ishtar_cal] Otrzymano czas Imperium - postac jest w domenie Imperium.",
   "Uzyj /imperium zamiast /ishtar.",
 }
 
 local MSG_CROSS_NO_ANCHOR = {
-  "Nie mam zapamietanej daty domeny Ishtar - nie moge wyliczyc raportu.",
+  "[ishtar_cal] Nie mam zapamietanej daty domeny Ishtar - nie moge wyliczyc raportu.",
   "Bedac w domenie Ishtar, uzyj komendy /ishtar - odczyt zapisze date na przyszlosc.",
 }
 
 local MSG_RESET_DONE = {
-  "Kotwica Ishtar wyczyszczona. Uzyj /ishtar na zewnatrz, zeby zapisac nowa.",
+  "[ishtar_cal] Kotwica Ishtar wyczyszczona. Uzyj /ishtar na zewnatrz, zeby zapisac nowa.",
 }
 
 local function printUnable()
@@ -851,7 +851,7 @@ local function tryFinishFromAnchor()
   if not now or not isValidIshtarTime(now.dayOfYear, now.hours, now.minutes) then return false end
   clearPending()
   printFramedReport({
-    "Pokazuje Ishtar wyliczone z zapisanej daty (ostatni odczyt: " ..
+    "[ishtar_cal] Pokazuje Ishtar wyliczone z zapisanej daty (ostatni odczyt: " ..
       os.date("%d-%m-%Y %H:%M", anchor.rlSec) .. ").",
   })
   runIshtarReport(now)
@@ -900,7 +900,7 @@ function ishtar_cal.onCrossLine(lineText)
   local now = anchor and extrapolateFromAnchor(anchor, os.time()) or nil
   if now and isValidIshtarTime(now.dayOfYear, now.hours, now.minutes) then
     printFramedReport({
-      "Pokazuje Ishtar wyliczone z zapisanej daty (ostatni odczyt: " ..
+      "[ishtar_cal] Pokazuje Ishtar wyliczone z zapisanej daty (ostatni odczyt: " ..
         os.date("%d-%m-%Y %H:%M", anchor.rlSec) .. ").",
     })
     runIshtarReport(now)
