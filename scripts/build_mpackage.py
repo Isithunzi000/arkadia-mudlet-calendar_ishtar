@@ -20,7 +20,9 @@ PACKAGE = "ishtar_cal"
 TITLE = "Kalendarz Ishtar"
 DESCRIPTION = ("Przyblizony czas do najblizszych swiat i wydarzen w domenie "
                "Starszego Ludu (Ishtar), kalendarz 360-dniowy z silnikiem okien "
-               "(na podstawie komendy 'czas'). Aliasy: /ishtar, /ishtar help.")
+               "(na podstawie komendy 'czas'). Aliasy: /ishtar, /ishtar help. "
+               "Wtyczka do gry Arkadia MUD (arkadia.rpg.pl) / "
+               "Plugin for Arkadia MUD (arkadia.rpg.pl).")
 OUT_DIR = os.path.join(ROOT, "dist")
 FIXED_DATE = (1980, 1, 1, 0, 0, 0)
 FILE_ATTR = 0o100644 << 16
