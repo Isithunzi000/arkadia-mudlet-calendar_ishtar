@@ -116,7 +116,7 @@ ishtar_cal = ishtar_cal or {}
 
 do
 
-local PLUGIN_VERSION = "1.8.24"
+local PLUGIN_VERSION = "1.8.25"
 local PLUGIN_BUILD   = "26-09-2026"
 
 local REAL_SEC_PER_GAME_MINUTE = 2
@@ -452,8 +452,34 @@ local function addGameMinutes(baseSec, gm)
   return baseSec + gm * REAL_SEC_PER_GAME_MINUTE
 end
 
+-- ---------- Europe/Warsaw (niezaleznie od TZ maszyny) ----------
+local function daysFromCivil(y, m, d)
+  if m &lt;= 2 then y = y - 1 end
+  local era = math.floor(y / 400)
+  local yoe = y - era * 400
+  local mp  = (m + 9) % 12
+  local doy = math.floor((153 * mp + 2) / 5) + d - 1
+  return era * 146097 + yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy - 719468
+end
+
+local function dstBoundaryUtcSec(year, month)
+  -- granica = ostatnia niedziela, 01:00 UTC (regula DST UE)
+  local days    = daysFromCivil(year, month, 31)
+  local weekday = (days + 4) % 7  -- 0 = niedziela
+  return daysFromCivil(year, month, 31 - weekday) * 86400 + 3600
+end
+
+local function warsawDateTime(tsSec)
+  -- Pelna data-czas w Europe/Warsaw: kalendarz UTC + przesuniecie sezonowe.
+  local utc      = os.date("!*t", tsSec)
+  local startSec = dstBoundaryUtcSec(utc.year, 3)
+  local endSec   = dstBoundaryUtcSec(utc.year, 10)
+  local offSec   = ((tsSec &gt;= startSec and tsSec &lt; endSec) and 120 or 60) * 60
+  return os.date("!*t", tsSec + offSec)
+end
+
 local function formatRealDateTime(ts)
-  local d = os.date("*t", ts)
+  local d = warsawDateTime(ts)
   return string.format("%s-%s-%d %s:%s",
     pad2(d.day), pad2(d.month), d.year, pad2(d.hour), pad2(d.min))
 end
@@ -852,7 +878,7 @@ local function tryFinishFromAnchor()
   clearPending()
   printFramedReport({
     "[ishtar_cal] Pokazuje Ishtar wyliczone z zapisanej daty (ostatni odczyt: " ..
-      os.date("%d-%m-%Y %H:%M", anchor.rlSec) .. ").",
+      formatRealDateTime(anchor.rlSec) .. ").",
   })
   runIshtarReport(now)
   return true
@@ -901,7 +927,7 @@ function ishtar_cal.onCrossLine(lineText)
   if now and isValidIshtarTime(now.dayOfYear, now.hours, now.minutes) then
     printFramedReport({
       "[ishtar_cal] Pokazuje Ishtar wyliczone z zapisanej daty (ostatni odczyt: " ..
-        os.date("%d-%m-%Y %H:%M", anchor.rlSec) .. ").",
+        formatRealDateTime(anchor.rlSec) .. ").",
     })
     runIshtarReport(now)
   else
